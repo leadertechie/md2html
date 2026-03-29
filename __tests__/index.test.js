@@ -72,7 +72,7 @@ describe('HTMLRenderer', () => {
         it('should render image', () => {
             const node = { type: 'image', src: 'image.jpg', alt: 'Alt text' };
             const html = renderer.renderNode(node);
-            expect(html).toBe('<img src="image.jpg" alt="Alt text" class="">');
+            expect(html).toBe('<img src="image.jpg" alt="Alt text">');
         });
     });
     describe('renderNodes', () => {

@@ -33,8 +33,15 @@ export interface ParseOptions {
   pedantic?: boolean;
 }
 
+export interface StyleConfig {
+  classPrefix?: string;
+  customCSS?: string;
+  addHeadingIds?: boolean;
+}
+
 export interface PipelineConfig {
   imagePathPrefix?: string;
   imageBaseUrl?: string;
   parseOptions?: ParseOptions;
+  styleOptions?: StyleConfig;
 }
