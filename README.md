@@ -55,8 +55,33 @@ const pipeline = new MarkdownPipeline({
     gfm: true,
     breaks: false,
     pedantic: false
+  },
+  styleOptions: {
+    classPrefix: 'md-',
+    customCSS: 'body { font-family: system-ui; }',
+    addHeadingIds: true
   }
 });
+```
+
+### Style Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `classPrefix` | string | `''` | Prefix for CSS classes on elements (e.g., `'md-'` produces `md-heading`, `md-paragraph`) |
+| `customCSS` | string | `''` | Custom CSS string to inject (use `pipeline.getCustomCSS()` to retrieve) |
+| `addHeadingIds` | boolean | `false` | Add ID attributes to headings based on their content for anchor links |
+
+When `classPrefix` or `addHeadingIds` is set, CSS classes will be added to elements:
+- `heading`, `paragraph`, `list`, `list-item`, `image`, `code`, `container`, `blockquote`
+
+Example output with `classPrefix: 'md-'` and `addHeadingIds: true`:
+```html
+<h1 id="hello-world" class="md-heading">Hello World</h1>
+<p class="md-paragraph">This is a paragraph.</p>
+<ul class="md-list">
+  <li class="md-list-item">Item 1</li>
+</ul>
 ```
 
 ### API
@@ -66,7 +91,9 @@ const pipeline = new MarkdownPipeline({
 | `parse(markdown)` | Parse markdown string to AST |
 | `render(nodes)` | Render AST to HTML string |
 | `renderMarkdown(markdown)` | Parse and render in one call |
-| `renderPage(title, nodes)` | Render AST to full HTML page |
+| `renderPage(title, nodes, options?)` | Render AST to full HTML page |
+| `getCustomCSS()` | Get custom CSS string from style config |
+| `getConfig()` | Get current pipeline configuration |
 
 ## License
 

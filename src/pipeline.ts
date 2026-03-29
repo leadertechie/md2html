@@ -1,6 +1,6 @@
-import { MarkdownParser } from './parser';
-import { HTMLRenderer } from './renderer';
-import { ContentNode, MarkdownContent, PipelineConfig } from './types';
+import { MarkdownParser } from './parser.js';
+import { HTMLRenderer } from './renderer.js';
+import { ContentNode, MarkdownContent, PipelineConfig, StyleConfig } from './types.js';
 
 export class MarkdownPipeline {
   private parser: MarkdownParser;
@@ -15,6 +15,11 @@ export class MarkdownPipeline {
         gfm: config.parseOptions?.gfm ?? true,
         breaks: config.parseOptions?.breaks ?? false,
         pedantic: config.parseOptions?.pedantic ?? false
+      },
+      styleOptions: {
+        classPrefix: config.styleOptions?.classPrefix || '',
+        customCSS: config.styleOptions?.customCSS || '',
+        addHeadingIds: config.styleOptions?.addHeadingIds ?? false
       }
     };
 
@@ -22,7 +27,7 @@ export class MarkdownPipeline {
       imagePathPrefix: this.config.imagePathPrefix,
       imageBaseUrl: this.config.imageBaseUrl
     });
-    this.renderer = new HTMLRenderer();
+    this.renderer = new HTMLRenderer(this.config.styleOptions);
   }
 
   parse(markdown: string): ContentNode[] {
@@ -62,5 +67,9 @@ export class MarkdownPipeline {
 
   getConfig(): Readonly<Required<PipelineConfig>> {
     return { ...this.config };
+  }
+
+  getCustomCSS(): string {
+    return this.renderer.getCustomCSS();
   }
 }
