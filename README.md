@@ -14,8 +14,10 @@ A configuration-driven markdown to HTML pipeline that parses markdown to an AST 
 ## Installation
 
 ```bash
-npm install @leadertechie/md2html
+npm install @leadertechie/md2html lit
 ```
+
+> Note: `lit` is a peer dependency and required for rendering Lit templates.
 
 ## Usage
 
