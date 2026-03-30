@@ -70,16 +70,18 @@ const pipeline = new MarkdownPipeline({
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `classPrefix` | string | `''` | Prefix for CSS classes on elements (e.g., `'md-'` produces `md-heading`, `md-paragraph`) |
+| `classPrefix` | string | `''` | Prefix for CSS classes on elements |
 | `customCSS` | string | `''` | Custom CSS string to inject (use `pipeline.getCustomCSS()` to retrieve) |
 | `addHeadingIds` | boolean | `false` | Add ID attributes to headings based on their content for anchor links |
 
 When `classPrefix` or `addHeadingIds` is set, CSS classes will be added to elements:
-- `heading`, `paragraph`, `list`, `list-item`, `image`, `code`, `container`, `blockquote`
+- Headings get level-specific classes: `md-h1`, `md-h2`, `md-h3`, etc.
+- Other elements: `paragraph`, `list`, `list-item`, `image`, `code`, `container`, `blockquote`
 
 Example output with `classPrefix: 'md-'` and `addHeadingIds: true`:
 ```html
-<h1 id="hello-world" class="md-heading">Hello World</h1>
+<h1 id="hello-world" class="md-h1">Hello World</h1>
+<h2 id="subheading" class="md-h2">Subheading</h2>
 <p class="md-paragraph">This is a paragraph.</p>
 <ul class="md-list">
   <li class="md-list-item">Item 1</li>
