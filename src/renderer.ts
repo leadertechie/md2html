@@ -47,10 +47,16 @@ export class HTMLRenderer {
         const headingId = this.config.addHeadingIds 
           ? ` id="${this.generateHeadingId(node.content)}"` 
           : '';
-        if (!this.hasClassConfig()) {
+        let headingClass = '';
+        if (this.hasClassConfig()) {
+          const prefix = this.config.classPrefix;
+          const levelClass = level === '1' ? 'h1' : level === '2' ? 'h2' : level === '3' ? 'h3' : level === '4' ? 'h4' : level === '5' ? 'h5' : 'h6';
+          headingClass = prefix ? `${prefix}${levelClass}` : levelClass;
+        }
+        if (!headingClass) {
           return `<h${level}${headingId}>${node.content || ''}</h${level}>`;
         }
-        return `<h${level}${headingId} class="${this.getClass('heading')}">${node.content || ''}</h${level}>`;
+        return `<h${level}${headingId} class="${headingClass}">${node.content || ''}</h${level}>`;
         
       case 'paragraph':
         if (node.children) {
