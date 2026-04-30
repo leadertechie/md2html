@@ -1,13 +1,66 @@
 import { marked } from 'marked';
-import { ContentNode, MarkdownContent, ParseOptions } from './types';
+import { ContentNode, MarkdownContent, ParseOptions, defaultAllowedHTMLTags } from './types.js';
+import { TokenHandlerRegistry, ParseContext } from './handlers/index.js';
+
+export interface ParserOptions {
+  imagePathPrefix?: string;
+  imageBaseUrl?: string;
+  preserveRawHTML?: boolean;
+  slotPattern?: RegExp;
+  onSlot?: (name: string) => string;
+  errorRecovery?: 'throw' | 'warn' | 'silent';
+  maxRecursionDepth?: number;
+  allowedHTMLTags?: string[];
+  /**
+   * Callback invoked when a token type has no dedicated handler.
+   * The catch-all handler will still produce a container node for the content,
+   * but this callback allows callers to log, warn, or track unhandled types.
+   *
+   * @param type - The unhandled token type name (e.g. 'table', 'def')
+   * @param token - The raw marked token
+   */
+  onUnhandledToken?: (type: string, token: Record<string, unknown>) => void;
+}
+
+const DEFAULT_SLOT_PATTERN = /\[\[(.*?)\]\]/g;
+
+// Re-export handler types for convenience
+export { TokenHandlerRegistry } from './handlers/index.js';
+export type { TokenHandler, ParseContext } from './handlers/index.js';
+
+// ─── MarkdownParser ───────────────────────────────────────────────────────────
 
 export class MarkdownParser {
   private imagePathPrefix: string;
   private imageBaseUrl: string;
+  private preserveRawHTML: boolean;
+  private slotPattern: RegExp;
+  private onSlot: ((name: string) => string) | undefined;
+  private errorRecovery: 'throw' | 'warn' | 'silent';
+  private maxRecursionDepth: number;
+  private allowedHTMLTags: Set<string>;
+  private handlerRegistry: TokenHandlerRegistry;
+  private onUnhandledToken?: (type: string, token: Record<string, unknown>) => void;
 
-  constructor(options?: { imagePathPrefix?: string; imageBaseUrl?: string }) {
+  constructor(options?: ParserOptions) {
     this.imagePathPrefix = options?.imagePathPrefix || '';
     this.imageBaseUrl = options?.imageBaseUrl || '';
+    this.preserveRawHTML = options?.preserveRawHTML ?? false;
+    this.slotPattern = options?.slotPattern ?? DEFAULT_SLOT_PATTERN;
+    this.onSlot = options?.onSlot;
+    this.errorRecovery = options?.errorRecovery ?? 'throw';
+    this.maxRecursionDepth = options?.maxRecursionDepth ?? 100;
+    this.allowedHTMLTags = new Set([
+      ...defaultAllowedHTMLTags,
+      ...(options?.allowedHTMLTags ?? [])
+    ]);
+    this.handlerRegistry = new TokenHandlerRegistry();
+    this.onUnhandledToken = options?.onUnhandledToken;
+  }
+
+  /** Access the handler registry for customization. */
+  get handlers(): TokenHandlerRegistry {
+    return this.handlerRegistry;
   }
 
   private processImagePath(src: string): string {
@@ -27,97 +80,69 @@ export class MarkdownParser {
       .replace(/\*(.+?)\*/g, '<em>$1</em>');
   }
 
-  private parseTokens(tokens: unknown[]): ContentNode[] {
+  private processSlots(text: string): string {
+    if (!this.onSlot) return text;
+    return text.replace(this.slotPattern, (match, name: string) => {
+      return this.onSlot!(name.trim());
+    });
+  }
+
+  private processRawHTML(html: string): string {
+    if (!this.allowedHTMLTags.has('script')) {
+      html = html.replace(/<script[\s\S]*?<\/script>/gi, '');
+      html = html.replace(/<\/?script[^>]*>/gi, '');
+    }
+    if (!this.allowedHTMLTags.has('style')) {
+      html = html.replace(/<style[\s\S]*?<\/style>/gi, '');
+      html = html.replace(/<\/?style[^>]*>/gi, '');
+    }
+    return html;
+  }
+
+  /**
+   * Build the ParseContext that is passed to every token handler.
+   * This is the bridge between the parser's private services and the handlers.
+   */
+  private createContext(): ParseContext {
+    const self = this;
+    return {
+      get preserveRawHTML() { return self.preserveRawHTML; },
+      get errorRecovery() { return self.errorRecovery; },
+      get maxRecursionDepth() { return self.maxRecursionDepth; },
+      processImagePath: (src: string) => self.processImagePath(src),
+      processInlineFormatting: (text: string) => self.processInlineFormatting(text),
+      processSlots: (text: string) => self.processSlots(text),
+      processRawHTML: (html: string) => self.processRawHTML(html),
+      parseTokens: (tokens: unknown[], depth: number) => self.parseTokens(tokens, depth),
+      reportUnhandled: (type: string, token: Record<string, unknown>) => {
+        self.onUnhandledToken?.(type, token);
+      }
+    };
+  }
+
+  private parseTokens(tokens: unknown[], depth: number = 0): ContentNode[] {
+    if (depth > this.maxRecursionDepth) {
+      const msg = `[md2html] Max recursion depth (${this.maxRecursionDepth}) exceeded, truncating`;
+      if (this.errorRecovery === 'warn') {
+        console.warn(msg);
+      }
+      return [];
+    }
+
     const nodes: ContentNode[] = [];
-    
+    const ctx = this.createContext();
+
     for (const token of tokens) {
-      const node = this.parseToken(token as Record<string, unknown>);
+      const typedToken = token as Record<string, unknown>;
+      // The registry automatically falls back to the catch-all handler
+      const handler = this.handlerRegistry.get(typedToken.type as string);
+      const node = handler.handle(typedToken, ctx);
       if (node) {
         nodes.push(node);
       }
     }
-    
+
     return nodes;
-  }
-
-  private parseToken(token: Record<string, unknown>): ContentNode | null {
-    switch (token.type) {
-      case 'heading':
-        return {
-          type: 'heading',
-          content: token.text as string,
-          attributes: { level: String(token.depth) }
-        };
-        
-      case 'paragraph':
-        const tokens = (token.tokens as Array<Record<string, unknown>>) || [];
-        const hasInlineImage = tokens.some(t => t.type === 'image');
-        
-        if (hasInlineImage) {
-          const children = tokens.map(t => {
-            if (t.type === 'image') {
-              return {
-                type: 'image' as const,
-                src: this.processImagePath(t.href as string),
-                alt: t.text as string || ''
-              };
-            }
-            return {
-              type: 'text' as const,
-              content: this.processInlineFormatting(t.text as string || '')
-            };
-          });
-          return {
-            type: 'paragraph',
-            children
-          };
-        }
-        
-        return {
-          type: 'paragraph',
-          content: this.processInlineFormatting(token.text as string)
-        };
-        
-      case 'list':
-        return {
-          type: 'list',
-          ordered: token.ordered as boolean,
-          children: (token.items as Array<Record<string, unknown>>).map((item) => ({
-            type: 'list-item',
-            content: this.processInlineFormatting(item.text as string)
-          }))
-        };
-        
-      case 'image':
-        return {
-          type: 'image',
-          src: this.processImagePath(token.href as string),
-          alt: token.title as string || ''
-        };
-
-      case 'code':
-        return {
-          type: 'code',
-          content: token.text as string,
-          attributes: { lang: token.lang as string || '' }
-        };
-      
-      case 'hr':
-        return { type: 'container', attributes: { tag: 'hr' } };
-      
-      case 'blockquote':
-        return {
-          type: 'container',
-          attributes: { tag: 'blockquote' },
-          children: this.parseTokens((token as Record<string, unknown>).tokens as unknown[] || [])
-        };
-      
-      case 'html':
-        return { type: 'container', content: token.raw as string };
-        
-      default:
-        return null;
-    }
   }
 
   parse(markdown: string, options?: ParseOptions): MarkdownContent {
@@ -126,14 +151,28 @@ export class MarkdownParser {
       breaks: options?.breaks ?? false,
       pedantic: options?.pedantic ?? false
     };
-    
-    const tokens = marked.lexer(markdown, parseOptions as Parameters<typeof marked.lexer>[1]);
-    const content = this.parseTokens(tokens);
-    
-    return {
-      title: '',
-      content
-    };
+
+    try {
+      const tokens = marked.lexer(markdown, parseOptions as Parameters<typeof marked.lexer>[1]);
+      const content = this.parseTokens(tokens);
+
+      return {
+        title: '',
+        content
+      };
+    } catch (err) {
+      if (this.errorRecovery === 'throw') throw err;
+
+      const msg = `[md2html] Parse error: ${err instanceof Error ? err.message : String(err)}`;
+      if (this.errorRecovery === 'warn') {
+        console.warn(msg);
+      }
+
+      return {
+        title: '',
+        content: [{ type: 'text', content: markdown }]
+      };
+    }
   }
 
   parseToNodes(markdown: string, options?: ParseOptions): ContentNode[] {
