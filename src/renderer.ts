@@ -1,13 +1,14 @@
-import { ContentNode, StyleConfig } from './types.js';
+import { ContentNode, StyleConfig, StyleConfigV2, nodeTypeToScope } from './types.js';
 
 export class HTMLRenderer {
-  private config: Required<StyleConfig>;
+  private config: Required<StyleConfigV2>;
 
-  constructor(config: StyleConfig = {}) {
+  constructor(config: StyleConfigV2 = {}) {
     this.config = {
       classPrefix: config.classPrefix || '',
       customCSS: config.customCSS || '',
-      addHeadingIds: config.addHeadingIds ?? false
+      addHeadingIds: config.addHeadingIds ?? false,
+      emitScopeAnchors: config.emitScopeAnchors ?? false
     };
   }
 
@@ -33,6 +34,16 @@ export class HTMLRenderer {
       .replace(/(^-|-$)/g, '');
   }
 
+  /**
+   * Get the scope attribute string for a node type.
+   * Returns empty string if emitScopeAnchors is disabled.
+   */
+  private getScopeAttr(node: ContentNode): string {
+    if (!this.config.emitScopeAnchors) return '';
+    const scopeValue = node.scope || nodeTypeToScope[node.type] || 'container';
+    return ` data-md-scope="${scopeValue}"`;
+  }
+
   private renderWithClass(tag: string, content: string, baseClass?: string, nodeClass?: string, extraAttrs?: string): string {
     const classAttr = this.hasClassConfig() && baseClass 
       ? ` class="${this.getClass(baseClass, nodeClass)}"` 
@@ -41,6 +52,8 @@ export class HTMLRenderer {
   }
 
   renderNode(node: ContentNode): string {
+    const scopeAttr = this.getScopeAttr(node);
+
     switch (node.type) {
       case 'heading':
         const level = node.attributes?.level || '2';
@@ -54,51 +67,59 @@ export class HTMLRenderer {
           headingClass = prefix ? `${prefix}${levelClass}` : levelClass;
         }
         if (!headingClass) {
-          return `<h${level}${headingId}>${node.content || ''}</h${level}>`;
+          return `<h${level}${headingId}${scopeAttr}>${node.content || ''}</h${level}>`;
         }
-        return `<h${level}${headingId} class="${headingClass}">${node.content || ''}</h${level}>`;
+        return `<h${level}${headingId}${scopeAttr} class="${headingClass}">${node.content || ''}</h${level}>`;
         
       case 'paragraph':
         if (node.children) {
           const childrenHtml = node.children.map(child => this.renderNode(child)).join('');
-          return this.renderWithClass('p', childrenHtml, 'paragraph');
+          return this.renderWithClass('p', childrenHtml, 'paragraph', undefined, scopeAttr);
         }
-        return this.renderWithClass('p', node.content || '', 'paragraph');
+        return this.renderWithClass('p', node.content || '', 'paragraph', undefined, scopeAttr);
         
       case 'list':
         const tag = node.ordered ? 'ol' : 'ul';
         const items = node.children?.map(child => this.renderNode(child)).join('') || '';
-        return this.renderWithClass(tag, items, 'list');
+        return this.renderWithClass(tag, items, 'list', undefined, scopeAttr);
         
       case 'list-item':
-        return this.renderWithClass('li', node.content || '', 'list-item');
+        return this.renderWithClass('li', node.content || '', 'list-item', undefined, scopeAttr);
         
       case 'image':
         const src = node.src || node.attributes?.src || '';
         const alt = node.alt || node.attributes?.alt || '';
         const classStr = this.getClass('image', node.className || undefined);
-        return `<img src="${src}" alt="${alt}"${classStr ? ` class="${classStr}"` : ''}>`;
+        return `<img src="${src}" alt="${alt}"${classStr ? ` class="${classStr}"` : ''}${scopeAttr}>`;
         
       case 'code':
         const codeClass = this.hasClassConfig() 
           ? ` class="${this.getClass('code')} language-${node.attributes?.lang || ''}"` 
           : ` class="language-${node.attributes?.lang || ''}"`;
-        return `<pre><code${codeClass}>${node.content || ''}</code></pre>`;
+        return `<pre${scopeAttr}><code${codeClass}>${node.content || ''}</code></pre>`;
       
       case 'container':
         if (node.attributes?.tag === 'hr') return '<hr>';
         if (node.attributes?.tag === 'blockquote') {
           const children = node.children?.map(child => this.renderNode(child)).join('') || '';
-          return this.renderWithClass('blockquote', children, 'blockquote');
+          return this.renderWithClass('blockquote', children, 'blockquote', undefined, scopeAttr);
+        }
+        // If node has rawHTML, emit it directly
+        if (node.rawHTML) {
+          return node.rawHTML;
         }
         const containerChildren = node.children?.map(child => this.renderNode(child)).join('') || '';
-        return this.renderWithClass('div', containerChildren, 'container', node.className || undefined);
+        return this.renderWithClass('div', containerChildren, 'container', node.className || undefined, scopeAttr);
       
       case 'strong':
-        return `<strong>${node.content || ''}</strong>`;
+        return `<strong${scopeAttr}>${node.content || ''}</strong>`;
       
       case 'emphasis':
-        return `<em>${node.content || ''}</em>`;
+        return `<em${scopeAttr}>${node.content || ''}</em>`;
+      
+      case 'link':
+        const href = node.attributes?.href || '';
+        return `<a href="${href}"${scopeAttr}>${node.content || ''}</a>`;
       
       case 'text':
       default:
@@ -109,6 +130,11 @@ export class HTMLRenderer {
   renderNodes(nodes: ContentNode[]): string {
     if (!nodes || nodes.length === 0) {
       return '';
+    }
+    // Wrap in scope root if emitScopeAnchors is enabled
+    if (this.config.emitScopeAnchors) {
+      const inner = nodes.map(node => this.renderNode(node)).join('\n');
+      return `<div data-md-scope="root">\n${inner}\n</div>`;
     }
     return nodes.map(node => this.renderNode(node)).join('\n');
   }

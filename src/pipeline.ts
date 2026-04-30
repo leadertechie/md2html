@@ -1,13 +1,18 @@
 import { MarkdownParser } from './parser.js';
 import { HTMLRenderer } from './renderer.js';
-import { ContentNode, MarkdownContent, PipelineConfig, StyleConfig } from './types.js';
+import { ContentNode, MarkdownContent, PipelineConfigV2 } from './types.js';
+
+type NormalizedPipelineConfig = Required<Omit<PipelineConfigV2, 'onSlot' | 'slotPattern'>> & {
+  onSlot?: (name: string) => string;
+  slotPattern: RegExp;
+};
 
 export class MarkdownPipeline {
   private parser: MarkdownParser;
   private renderer: HTMLRenderer;
-  private config: Required<PipelineConfig>;
+  private config: NormalizedPipelineConfig;
 
-  constructor(config: PipelineConfig = {}) {
+  constructor(config: PipelineConfigV2 = {}) {
     this.config = {
       imagePathPrefix: config.imagePathPrefix || '',
       imageBaseUrl: config.imageBaseUrl || '',
@@ -19,13 +24,26 @@ export class MarkdownPipeline {
       styleOptions: {
         classPrefix: config.styleOptions?.classPrefix || '',
         customCSS: config.styleOptions?.customCSS || '',
-        addHeadingIds: config.styleOptions?.addHeadingIds ?? false
-      }
+        addHeadingIds: config.styleOptions?.addHeadingIds ?? false,
+        emitScopeAnchors: config.styleOptions?.emitScopeAnchors ?? false
+      },
+      preserveRawHTML: config.preserveRawHTML ?? false,
+      slotPattern: config.slotPattern ?? /\[\[(.*?)\]\]/g,
+      onSlot: config.onSlot,
+      errorRecovery: config.errorRecovery ?? 'throw',
+      maxRecursionDepth: config.maxRecursionDepth ?? 100,
+      allowedHTMLTags: config.allowedHTMLTags ?? []
     };
 
     this.parser = new MarkdownParser({
       imagePathPrefix: this.config.imagePathPrefix,
-      imageBaseUrl: this.config.imageBaseUrl
+      imageBaseUrl: this.config.imageBaseUrl,
+      preserveRawHTML: this.config.preserveRawHTML,
+      slotPattern: this.config.slotPattern,
+      onSlot: this.config.onSlot,
+      errorRecovery: this.config.errorRecovery,
+      maxRecursionDepth: this.config.maxRecursionDepth,
+      allowedHTMLTags: this.config.allowedHTMLTags
     });
     this.renderer = new HTMLRenderer(this.config.styleOptions);
   }
@@ -65,7 +83,7 @@ export class MarkdownPipeline {
 </html>`;
   }
 
-  getConfig(): Readonly<Required<PipelineConfig>> {
+  getConfig(): Readonly<PipelineConfigV2> {
     return { ...this.config };
   }
 
