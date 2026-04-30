@@ -4,7 +4,7 @@
  * add its export here. The registry will pick it up automatically.
  */
 
-export { TokenHandler, ParseContext } from './types.js';
+export type { TokenHandler, ParseContext } from './types.js';
 export { TokenHandlerRegistry } from './registry.js';
 export { HeadingHandler } from './heading-handler.js';
 export { ParagraphHandler } from './paragraph-handler.js';
