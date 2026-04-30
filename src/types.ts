@@ -56,7 +56,7 @@ export interface PipelineConfig {
   imagePathPrefix?: string;
   imageBaseUrl?: string;
   parseOptions?: ParseOptions;
-  styleOptions?: StyleConfig;
+  styleOptions?: StyleConfig | StyleConfigV2;
 }
 
 /**
