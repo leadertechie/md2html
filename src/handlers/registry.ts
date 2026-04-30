@@ -1,4 +1,4 @@
-import { TokenHandler } from './types.js';
+import type { TokenHandler } from './types.js';
 import { HeadingHandler } from './heading-handler.js';
 import { ParagraphHandler } from './paragraph-handler.js';
 import { ListHandler } from './list-handler.js';
