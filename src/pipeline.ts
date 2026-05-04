@@ -32,8 +32,10 @@ export class MarkdownPipeline {
       onSlot: config.onSlot,
       errorRecovery: config.errorRecovery ?? 'throw',
       maxRecursionDepth: config.maxRecursionDepth ?? 100,
-      allowedHTMLTags: config.allowedHTMLTags ?? []
+      allowedHTMLTags: config.allowedHTMLTags ?? [],
+      allowedAttributes: config.allowedAttributes ?? {}
     };
+
 
     this.parser = new MarkdownParser({
       imagePathPrefix: this.config.imagePathPrefix,
@@ -43,8 +45,10 @@ export class MarkdownPipeline {
       onSlot: this.config.onSlot,
       errorRecovery: this.config.errorRecovery,
       maxRecursionDepth: this.config.maxRecursionDepth,
-      allowedHTMLTags: this.config.allowedHTMLTags
+      allowedHTMLTags: this.config.allowedHTMLTags,
+      allowedAttributes: this.config.allowedAttributes
     });
+
     this.renderer = new HTMLRenderer(this.config.styleOptions);
   }
 

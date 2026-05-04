@@ -12,7 +12,14 @@ export interface ParserOptions {
   maxRecursionDepth?: number;
   allowedHTMLTags?: string[];
   /**
+   * Allowed HTML attributes per tag for preserveRawHTML mode.
+   * Key "*" applies to all tags. Key "tag" applies to specific tags.
+   * Supports "data-*" wildcard prefix matching.
+   */
+  allowedAttributes?: Record<string, string[]>;
+  /**
    * Callback invoked when a token type has no dedicated handler.
+
    * The catch-all handler will still produce a container node for the content,
    * but this callback allows callers to log, warn, or track unhandled types.
    *
@@ -39,6 +46,7 @@ export class MarkdownParser {
   private errorRecovery: 'throw' | 'warn' | 'silent';
   private maxRecursionDepth: number;
   private allowedHTMLTags: Set<string>;
+  private allowedAttributes: Record<string, string[]>;
   private handlerRegistry: TokenHandlerRegistry;
   private onUnhandledToken?: (type: string, token: Record<string, unknown>) => void;
 
@@ -54,9 +62,11 @@ export class MarkdownParser {
       ...defaultAllowedHTMLTags,
       ...(options?.allowedHTMLTags ?? [])
     ]);
+    this.allowedAttributes = options?.allowedAttributes ?? {};
     this.handlerRegistry = new TokenHandlerRegistry();
     this.onUnhandledToken = options?.onUnhandledToken;
   }
+
 
   /** Access the handler registry for customization. */
   get handlers(): TokenHandlerRegistry {
@@ -87,6 +97,80 @@ export class MarkdownParser {
     });
   }
 
+  /**
+   * Check if an attribute name is allowed for a given tag.
+   * Supports "data-*" wildcard prefix matching.
+   */
+  private isAttributeAllowed(tagName: string, attrName: string): boolean {
+    const globalAllowed = this.allowedAttributes['*'];
+    if (globalAllowed && this.matchesAttributeList(attrName, globalAllowed)) {
+      return true;
+    }
+    const tagAllowed = this.allowedAttributes[tagName];
+    if (tagAllowed && this.matchesAttributeList(attrName, tagAllowed)) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Check if an attribute name matches a list of allowed patterns.
+   * Supports "data-*" wildcard prefix matching.
+   */
+  private matchesAttributeList(attrName: string, allowed: string[]): boolean {
+    const lower = attrName.toLowerCase();
+    for (const pattern of allowed) {
+      if (pattern.endsWith('-*')) {
+        const prefix = pattern.slice(0, -1).toLowerCase();
+        if (lower.startsWith(prefix)) return true;
+      } else if (pattern.toLowerCase() === lower) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Filter attributes on an HTML tag, keeping only allowed ones.
+   */
+  private filterTagAttributes(tag: string): string {
+    // Match opening tag: <tagname ...attrs...>
+    const tagMatch = tag.match(/^<\/?(\w+)/);
+    if (!tagMatch) return tag;
+    const tagName = tagMatch[1].toLowerCase();
+
+    // If no attribute rules defined, return as-is
+    const hasRules = Object.keys(this.allowedAttributes).length > 0;
+    if (!hasRules) return tag;
+
+    // Extract all attributes from the tag
+    const attrRegex = /(\S+)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))/g;
+    const selfClosing = tag.endsWith('/>');
+
+    // Get the tag opening part (e.g., <div or </div)
+    const tagOpen = tagMatch[0];
+    const remaining = tag.slice(tagOpen.length);
+
+    // Rebuild the tag with only allowed attributes
+    let filtered = tagOpen;
+    let match: RegExpExecArray | null;
+    while ((match = attrRegex.exec(remaining)) !== null) {
+      const attrName = match[1];
+      const attrValue = match[2] ?? match[3] ?? match[4] ?? '';
+      if (this.isAttributeAllowed(tagName, attrName)) {
+        filtered += ` ${attrName}="${attrValue.replace(/"/g, '"')}"`;
+      }
+    }
+
+    // Close the tag
+    if (selfClosing) {
+      filtered += ' /';
+    }
+    filtered += '>';
+
+    return filtered;
+  }
+
   private processRawHTML(html: string): string {
     if (!this.allowedHTMLTags.has('script')) {
       html = html.replace(/<script[\s\S]*?<\/script>/gi, '');
@@ -96,8 +180,16 @@ export class MarkdownParser {
       html = html.replace(/<style[\s\S]*?<\/style>/gi, '');
       html = html.replace(/<\/?style[^>]*>/gi, '');
     }
+
+    // Filter attributes on all remaining HTML tags
+    const hasAttrRules = Object.keys(this.allowedAttributes).length > 0;
+    if (hasAttrRules) {
+      html = html.replace(/<[^>]+>/g, (match) => this.filterTagAttributes(match));
+    }
+
     return html;
   }
+
 
   /**
    * Build the ParseContext that is passed to every token handler.
