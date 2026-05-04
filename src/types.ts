@@ -76,7 +76,15 @@ export interface PipelineConfigV2 extends PipelineConfig {
   maxRecursionDepth?: number;
   /** Additional allowed HTML tags for preserveRawHTML mode */
   allowedHTMLTags?: string[];
+  /**
+   * Allowed HTML attributes per tag for preserveRawHTML mode.
+   * Key "*" applies to all tags. Key "tag" applies to specific tags.
+   * Supports "data-*" wildcard prefix matching.
+   * Example: { "*": ["id", "class"], "script": ["type", "src"] }
+   */
+  allowedAttributes?: Record<string, string[]>;
 }
+
 
 /** Default allowed HTML tags for preserveRawHTML mode */
 export const defaultAllowedHTMLTags = [
