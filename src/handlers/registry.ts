@@ -9,6 +9,8 @@ import { BlockquoteHandler } from './blockquote-handler.js';
 import { HtmlHandler } from './html-handler.js';
 import { CatchAllHandler } from './catchall-handler.js';
 import { FrontmatterHandler } from './frontmatter-handler.js';
+import { ContainerBlockHandler } from './container-block-handler.js';
+
 
 /**
  * Registry of token handlers. Handlers can be added/overridden externally
@@ -36,6 +38,8 @@ export class TokenHandlerRegistry {
     this.register(new BlockquoteHandler());
     this.register(new HtmlHandler());
     this.register(new FrontmatterHandler());
+    this.register(new ContainerBlockHandler());
+
 
     // Catch-all handler for any unregistered token types
     this.catchAll = new CatchAllHandler();

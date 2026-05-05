@@ -1,7 +1,12 @@
-import { ContentNode, StyleConfig, StyleConfigV2, nodeTypeToScope } from './types.js';
+import { ContentNode, StyleConfigV2, nodeTypeToScope } from './types.js';
+import { RendererStrategyRegistry, RenderContext } from './renderer-strategies.js';
+
+export { RendererStrategyRegistry } from './renderer-strategies.js';
+export type { NodeRendererStrategy, RenderContext } from './renderer-strategies.js';
 
 export class HTMLRenderer {
   private config: Required<StyleConfigV2>;
+  private strategyRegistry: RendererStrategyRegistry;
 
   constructor(config: StyleConfigV2 = {}) {
     this.config = {
@@ -10,6 +15,12 @@ export class HTMLRenderer {
       addHeadingIds: config.addHeadingIds ?? false,
       emitScopeAnchors: config.emitScopeAnchors ?? false
     };
+    this.strategyRegistry = new RendererStrategyRegistry();
+  }
+
+  /** Access the strategy registry for customization. */
+  get strategies(): RendererStrategyRegistry {
+    return this.strategyRegistry;
   }
 
   private hasClassConfig(): boolean {
@@ -44,87 +55,34 @@ export class HTMLRenderer {
     return ` data-md-scope="${scopeValue}"`;
   }
 
-  private renderWithClass(tag: string, content: string, baseClass?: string, nodeClass?: string, extraAttrs?: string): string {
-    const classAttr = this.hasClassConfig() && baseClass 
-      ? ` class="${this.getClass(baseClass, nodeClass)}"` 
-      : '';
-    return `<${tag}${classAttr}${extraAttrs || ''}>${content}</${tag}>`;
+  /**
+   * Get the CSS class for a container's tag-based rendering.
+   * Returns just the tag name since renderWithClass applies the prefix.
+   */
+  private getContainerClass(tag: string): string {
+    if (!this.hasClassConfig()) return '';
+    return tag;
+  }
+
+  private buildRenderContext(): RenderContext {
+    const self = this;
+    return {
+      get classPrefix() { return self.config.classPrefix; },
+      get addHeadingIds() { return self.config.addHeadingIds; },
+      get emitScopeAnchors() { return self.config.emitScopeAnchors; },
+      get customCSS() { return self.config.customCSS; },
+      hasClassConfig: () => self.hasClassConfig(),
+      getClass: (baseClass: string, nodeClass?: string) => self.getClass(baseClass, nodeClass),
+      getScopeAttr: (node: ContentNode) => self.getScopeAttr(node),
+      generateHeadingId: (content?: string) => self.generateHeadingId(content),
+      getContainerClass: (tag: string) => self.getContainerClass(tag)
+    };
   }
 
   renderNode(node: ContentNode): string {
-    const scopeAttr = this.getScopeAttr(node);
-
-    switch (node.type) {
-      case 'heading':
-        const level = node.attributes?.level || '2';
-        const headingId = this.config.addHeadingIds 
-          ? ` id="${this.generateHeadingId(node.content)}"` 
-          : '';
-        let headingClass = '';
-        if (this.hasClassConfig()) {
-          const prefix = this.config.classPrefix;
-          const levelClass = level === '1' ? 'h1' : level === '2' ? 'h2' : level === '3' ? 'h3' : level === '4' ? 'h4' : level === '5' ? 'h5' : 'h6';
-          headingClass = prefix ? `${prefix}${levelClass}` : levelClass;
-        }
-        if (!headingClass) {
-          return `<h${level}${headingId}${scopeAttr}>${node.content || ''}</h${level}>`;
-        }
-        return `<h${level}${headingId}${scopeAttr} class="${headingClass}">${node.content || ''}</h${level}>`;
-        
-      case 'paragraph':
-        if (node.children) {
-          const childrenHtml = node.children.map(child => this.renderNode(child)).join('');
-          return this.renderWithClass('p', childrenHtml, 'paragraph', undefined, scopeAttr);
-        }
-        return this.renderWithClass('p', node.content || '', 'paragraph', undefined, scopeAttr);
-        
-      case 'list':
-        const tag = node.ordered ? 'ol' : 'ul';
-        const items = node.children?.map(child => this.renderNode(child)).join('') || '';
-        return this.renderWithClass(tag, items, 'list', undefined, scopeAttr);
-        
-      case 'list-item':
-        return this.renderWithClass('li', node.content || '', 'list-item', undefined, scopeAttr);
-        
-      case 'image':
-        const src = node.src || node.attributes?.src || '';
-        const alt = node.alt || node.attributes?.alt || '';
-        const classStr = this.getClass('image', node.className || undefined);
-        return `<img src="${src}" alt="${alt}"${classStr ? ` class="${classStr}"` : ''}${scopeAttr}>`;
-        
-      case 'code':
-        const codeClass = this.hasClassConfig() 
-          ? ` class="${this.getClass('code')} language-${node.attributes?.lang || ''}"` 
-          : ` class="language-${node.attributes?.lang || ''}"`;
-        return `<pre${scopeAttr}><code${codeClass}>${node.content || ''}</code></pre>`;
-      
-      case 'container':
-        if (node.attributes?.tag === 'hr') return '<hr>';
-        if (node.attributes?.tag === 'blockquote') {
-          const children = node.children?.map(child => this.renderNode(child)).join('') || '';
-          return this.renderWithClass('blockquote', children, 'blockquote', undefined, scopeAttr);
-        }
-        // If node has rawHTML, emit it directly
-        if (node.rawHTML) {
-          return node.rawHTML;
-        }
-        const containerChildren = node.children?.map(child => this.renderNode(child)).join('') || '';
-        return this.renderWithClass('div', containerChildren, 'container', node.className || undefined, scopeAttr);
-      
-      case 'strong':
-        return `<strong${scopeAttr}>${node.content || ''}</strong>`;
-      
-      case 'emphasis':
-        return `<em${scopeAttr}>${node.content || ''}</em>`;
-      
-      case 'link':
-        const href = node.attributes?.href || '';
-        return `<a href="${href}"${scopeAttr}>${node.content || ''}</a>`;
-      
-      case 'text':
-      default:
-        return node.content || '';
-    }
+    const ctx = this.buildRenderContext();
+    const strategy = this.strategyRegistry.get(node.type);
+    return strategy.render(node, (child) => this.renderNode(child), ctx);
   }
 
   renderNodes(nodes: ContentNode[]): string {
