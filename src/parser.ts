@@ -197,6 +197,7 @@ export class MarkdownParser {
    */
   private createContext(): ParseContext {
     const self = this;
+    const metadata: Record<string, unknown> = {};
     return {
       get preserveRawHTML() { return self.preserveRawHTML; },
       get errorRecovery() { return self.errorRecovery; },
@@ -208,11 +209,17 @@ export class MarkdownParser {
       parseTokens: (tokens: unknown[], depth: number) => self.parseTokens(tokens, depth),
       reportUnhandled: (type: string, token: Record<string, unknown>) => {
         self.onUnhandledToken?.(type, token);
-      }
+      },
+      metadata
     };
   }
 
-  private parseTokens(tokens: unknown[], depth: number = 0): ContentNode[] {
+  /**
+   * Process an array of marked tokens into ContentNodes.
+   * When depth === 0 (root), creates a shared context that accumulates metadata.
+   * For recursive calls (depth > 0), creates a fresh context for each level.
+   */
+  private parseTokens(tokens: unknown[], depth: number = 0, sharedCtx?: ParseContext): ContentNode[] {
     if (depth > this.maxRecursionDepth) {
       const msg = `[md2html] Max recursion depth (${this.maxRecursionDepth}) exceeded, truncating`;
       if (this.errorRecovery === 'warn') {
@@ -222,7 +229,8 @@ export class MarkdownParser {
     }
 
     const nodes: ContentNode[] = [];
-    const ctx = this.createContext();
+    // Use shared context at root level (depth 0), create fresh for recursive calls
+    const ctx = sharedCtx || this.createContext();
 
     for (const token of tokens) {
       const typedToken = token as Record<string, unknown>;
@@ -237,6 +245,102 @@ export class MarkdownParser {
     return nodes;
   }
 
+  /**
+   * Pre-process markdown: convert `:::tag#id.class` container syntax
+   * into HTML comment markers that marked will preserve as html tokens,
+   * but won't affect markdown parsing of the inner content.
+   *
+   * Example:
+   *   :::section#header
+   *   # Heading inside container
+   *   Some text
+   *   :::
+   *
+   * Becomes:
+   *   <!-- md-container:section#header -->
+   *   # Heading inside container
+   *   Some text
+   *   <!-- /md-container -->
+   */
+  private preprocessContainerBlocks(markdown: string): string {
+    // Match opening fence: :::tagname#id.class (at start of line)
+    // Valid patterns: :::div, :::section#header, :::div.container, :::section#header.main
+    return markdown.replace(/^:::(?:(\w+(?:[.#][\w-]+)*)\s*)?$/gm, (match, specifier) => {
+      if (!specifier) {
+        // Closing fence :::
+        return '<!-- /md-container -->';
+      }
+      // Normalize: if no tag name given, default to "div"
+      const normalized = specifier.match(/^\w/) ? specifier : `div${specifier}`;
+      return `<!-- md-container:${normalized} -->`;
+    });
+  }
+
+  /**
+   * Post-process marked tokens to collapse container block markers
+   * into structured containerBlock tokens with proper nesting.
+   *
+   * This handles nesting depth up to maxRecursionDepth.
+   */
+  private postprocessTokens(tokens: unknown[]): unknown[] {
+    const result: unknown[] = [];
+    const stack: { specifier: string; tokens: unknown[] }[] = [];
+    let current = result;
+
+    for (const token of tokens) {
+      const t = token as Record<string, unknown>;
+
+      // Detect container opening comment
+      if (t.type === 'html') {
+        const raw = (t.raw as string).trim();
+        const openMatch = raw.match(/^<!--\s*md-container:\s*(\S+)\s*-->$/);
+        const closeMatch = raw.match(/^<!--\s*\/md-container\s*-->$/);
+
+
+        if (openMatch) {
+          // Start a new container
+          const newContainer: { specifier: string; tokens: unknown[] } = {
+            specifier: openMatch[1],
+            tokens: []
+          };
+          stack.push(newContainer);
+          continue;
+        }
+
+        if (closeMatch) {
+          if (stack.length === 0) {
+            // Unmatched closing fence — ignore
+            continue;
+          }
+          const container = stack.pop()!;
+          // Recursively process inner tokens for any nested containers
+          const processedInner = this.postprocessTokens(container.tokens);
+          const containerToken = {
+            type: 'containerBlock',
+            specifier: container.specifier,
+            tokens: processedInner
+          };
+
+          if (stack.length > 0) {
+            stack[stack.length - 1].tokens.push(containerToken);
+          } else {
+            result.push(containerToken);
+          }
+          continue;
+        }
+      }
+
+      // Not a container marker — add to current context
+      if (stack.length > 0) {
+        stack[stack.length - 1].tokens.push(token);
+      } else {
+        result.push(token);
+      }
+    }
+
+    return result;
+  }
+
   parse(markdown: string, options?: ParseOptions): MarkdownContent {
     const parseOptions = {
       gfm: options?.gfm ?? true,
@@ -245,11 +349,22 @@ export class MarkdownParser {
     };
 
     try {
-      const tokens = marked.lexer(markdown, parseOptions as Parameters<typeof marked.lexer>[1]);
-      const content = this.parseTokens(tokens);
+      // Step 1: Pre-process ::: container syntax into HTML comment markers
+      const processed = this.preprocessContainerBlocks(markdown);
+
+      // Step 2: Lex with marked (content between markers is parsed as normal markdown)
+      const rawTokens = marked.lexer(processed, parseOptions as Parameters<typeof marked.lexer>[1]);
+
+      // Step 3: Post-process to collapse comment markers into containerBlock tokens
+      const tokens = this.postprocessTokens(rawTokens);
+
+      // Create a shared context at root level so frontmatter metadata accumulates
+      const ctx = this.createContext();
+      const content = this.parseTokens(tokens, 0, ctx);
 
       return {
         title: '',
+        metadata: { ...ctx.metadata },
         content
       };
     } catch (err) {
@@ -266,6 +381,7 @@ export class MarkdownParser {
       };
     }
   }
+
 
   parseToNodes(markdown: string, options?: ParseOptions): ContentNode[] {
     return this.parse(markdown, options).content;
