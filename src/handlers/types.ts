@@ -25,4 +25,9 @@ export interface ParseContext {
   maxRecursionDepth: number;
   /** Report an unhandled token type so callers can be notified */
   reportUnhandled(type: string, token: Record<string, unknown>): void;
+  /**
+   * Shared metadata store populated by token handlers (e.g. FrontmatterHandler).
+   * After parsing, this object contains all frontmatter key-value pairs.
+   */
+  metadata: Record<string, unknown>;
 }

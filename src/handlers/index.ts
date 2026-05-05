@@ -15,3 +15,4 @@ export { HrHandler } from './hr-handler.js';
 export { BlockquoteHandler } from './blockquote-handler.js';
 export { HtmlHandler } from './html-handler.js';
 export { CatchAllHandler } from './catchall-handler.js';
+export { FrontmatterHandler } from './frontmatter-handler.js';

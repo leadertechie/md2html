@@ -197,6 +197,7 @@ export class MarkdownParser {
    */
   private createContext(): ParseContext {
     const self = this;
+    const metadata: Record<string, unknown> = {};
     return {
       get preserveRawHTML() { return self.preserveRawHTML; },
       get errorRecovery() { return self.errorRecovery; },
@@ -208,11 +209,17 @@ export class MarkdownParser {
       parseTokens: (tokens: unknown[], depth: number) => self.parseTokens(tokens, depth),
       reportUnhandled: (type: string, token: Record<string, unknown>) => {
         self.onUnhandledToken?.(type, token);
-      }
+      },
+      metadata
     };
   }
 
-  private parseTokens(tokens: unknown[], depth: number = 0): ContentNode[] {
+  /**
+   * Process an array of marked tokens into ContentNodes.
+   * When depth === 0 (root), creates a shared context that accumulates metadata.
+   * For recursive calls (depth > 0), creates a fresh context for each level.
+   */
+  private parseTokens(tokens: unknown[], depth: number = 0, sharedCtx?: ParseContext): ContentNode[] {
     if (depth > this.maxRecursionDepth) {
       const msg = `[md2html] Max recursion depth (${this.maxRecursionDepth}) exceeded, truncating`;
       if (this.errorRecovery === 'warn') {
@@ -222,7 +229,8 @@ export class MarkdownParser {
     }
 
     const nodes: ContentNode[] = [];
-    const ctx = this.createContext();
+    // Use shared context at root level (depth 0), create fresh for recursive calls
+    const ctx = sharedCtx || this.createContext();
 
     for (const token of tokens) {
       const typedToken = token as Record<string, unknown>;
@@ -246,10 +254,13 @@ export class MarkdownParser {
 
     try {
       const tokens = marked.lexer(markdown, parseOptions as Parameters<typeof marked.lexer>[1]);
-      const content = this.parseTokens(tokens);
+      // Create a shared context at root level so frontmatter metadata accumulates
+      const ctx = this.createContext();
+      const content = this.parseTokens(tokens, 0, ctx);
 
       return {
         title: '',
+        metadata: { ...ctx.metadata },
         content
       };
     } catch (err) {
