@@ -7,7 +7,9 @@ import { CodeHandler } from './code-handler.js';
 import { HrHandler } from './hr-handler.js';
 import { BlockquoteHandler } from './blockquote-handler.js';
 import { HtmlHandler } from './html-handler.js';
+import { LinkHandler } from './link-handler.js';
 import { CatchAllHandler } from './catchall-handler.js';
+
 import { FrontmatterHandler } from './frontmatter-handler.js';
 import { ContainerBlockHandler } from './container-block-handler.js';
 
@@ -39,6 +41,8 @@ export class TokenHandlerRegistry {
     this.register(new HtmlHandler());
     this.register(new FrontmatterHandler());
     this.register(new ContainerBlockHandler());
+    this.register(new LinkHandler());
+
 
 
     // Catch-all handler for any unregistered token types
