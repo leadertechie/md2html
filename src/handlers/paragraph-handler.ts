@@ -2,7 +2,7 @@ import { ContentNode } from '../types.js';
 import { TokenHandler, ParseContext } from './types.js';
 
 /**
- * Handles 'paragraph' tokens, including inline images and raw HTML.
+ * Handles 'paragraph' tokens, including inline images, links, and raw HTML.
  */
 export class ParagraphHandler implements TokenHandler {
   readonly type = 'paragraph';
@@ -10,15 +10,26 @@ export class ParagraphHandler implements TokenHandler {
   handle(token: Record<string, unknown>, ctx: ParseContext) {
     const tokens = (token.tokens as Array<Record<string, unknown>>) || [];
     const hasInlineImage = tokens.some(t => t.type === 'image');
+    const hasInlineLink = tokens.some(t => t.type === 'link');
     const hasInlineHTML = tokens.some(t => t.type === 'html');
 
-    if (hasInlineImage || (ctx.preserveRawHTML && hasInlineHTML)) {
+    if (hasInlineImage || hasInlineLink || (ctx.preserveRawHTML && hasInlineHTML)) {
       const children = tokens.map(t => {
         if (t.type === 'image') {
           return {
             type: 'image' as const,
             src: ctx.processImagePath(t.href as string),
             alt: t.text as string || ''
+          };
+        }
+        if (t.type === 'link') {
+          return {
+            type: 'link' as const,
+            content: ctx.processSlots(ctx.processInlineFormatting(t.text as string || '')),
+            attributes: {
+              href: t.href as string || '',
+              ...(t.title ? { title: t.title as string } : {})
+            }
           };
         }
         if (t.type === 'html' && ctx.preserveRawHTML) {
@@ -33,6 +44,7 @@ export class ParagraphHandler implements TokenHandler {
           content: ctx.processSlots(ctx.processInlineFormatting(t.text as string || ''))
         };
       }).filter(Boolean) as ContentNode[];
+
 
       if (children.length === 0) return null;
 

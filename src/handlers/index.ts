@@ -16,5 +16,7 @@ export { BlockquoteHandler } from './blockquote-handler.js';
 export { HtmlHandler } from './html-handler.js';
 export { CatchAllHandler } from './catchall-handler.js';
 export { FrontmatterHandler } from './frontmatter-handler.js';
+export { LinkHandler } from './link-handler.js';
 export { ContainerBlockHandler } from './container-block-handler.js';
+
 
