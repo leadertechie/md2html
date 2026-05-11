@@ -8,6 +8,4 @@ export * from './factory.js';
 export * from './preprocessor.js';
 export * from './token-postprocessor.js';
 export * from './context-factory.js';
-export * from './lit-renderer.js';
-export * from './lit-strategies.js';
 export type { NodeRendererStrategy, RenderContext } from './renderer-strategies.js';

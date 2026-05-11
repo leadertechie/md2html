@@ -12,7 +12,7 @@
  *   litRenderer.strategies.register(new MyLitStrategy());
  */
 
-import { TemplateResult, html } from 'lit';
+import { TemplateResult, html } from 'lit-html';
 import { ContentNode } from './types.js';
 import { LitStrategyRegistry } from './lit-strategies.js';
 import { HTMLRenderer } from './renderer.js';

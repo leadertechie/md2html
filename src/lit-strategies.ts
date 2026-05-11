@@ -11,8 +11,8 @@
  * 2. Registering it with the LitStrategyRegistry
  */
 
-import { TemplateResult, html } from 'lit';
-import { unsafeHTML } from 'lit/directives/unsafe-html.js';
+import { TemplateResult, html } from 'lit-html';
+import { unsafeHTML } from 'lit-html/directives/unsafe-html.js';
 import { ContentNode } from './types.js';
 
 // ─── Strategy Interface ───────────────────────────────────────────────────────
