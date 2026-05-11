@@ -23,11 +23,10 @@
   },
   "dependencies": {
     "@leadertechie/telemetry": "^0.0.0",
-    "marked": "^15.0.0"
+    "marked": "^15.0.0",
+    "lit-html": "^3.0.0"
   },
-  "peerDependencies": {
-    "lit": "^3.0.0"
-  },
+  "peerDependencies": {},
   "devDependencies": {
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0",
@@ -52,5 +51,10 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/leadertechie/md2html.git"
+  },
+  "peerDependenciesMeta": {
+    "lit": {
+      "optional": true
+    }
   }
 }
