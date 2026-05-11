@@ -63,6 +63,8 @@ export interface PipelineConfig {
  * v2: Extended PipelineConfig with raw HTML passthrough, slot hooks, and error recovery.
  */
 export interface PipelineConfigV2 extends PipelineConfig {
+  /** Optional telemetry logger for observability. Pass your own or a default console logger is used. */
+  logger?: import("@leadertechie/telemetry").LoggerInterface;
   styleOptions?: StyleConfigV2;
   /** Preserve raw HTML tags in markdown (img, style, div, span, etc.) (default: false) */
   preserveRawHTML?: boolean;

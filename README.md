@@ -189,9 +189,94 @@ Additional safety with `maxRecursionDepth` (default: 100) to prevent stack overf
 
 ## Architecture (v2)
 
-### Strategy Pattern Token Handlers
+The pipeline is built from modular stages, each with a clear design pattern and single responsibility:
 
-The parser uses a **strategy pattern** with a `TokenHandlerRegistry`. Each marked token type has its own handler class:
+```
+Markdown String
+      │
+      ▼
+┌──────────────────────────┐
+│ 1. Preprocessor Chain    │  Chain of Responsibility
+│    (preprocessor.ts)     │  Transforms raw markdown before lexing
+│    • ContainerBlock      │  (e.g., ::: containers → HTML comments)
+└──────────┬───────────────┘
+           │
+           ▼
+┌──────────────────────────┐
+│ 2. marked.lexer()        │  Third-party lexer
+└──────────┬───────────────┘
+           │
+           ▼
+┌──────────────────────────┐
+│ 3. Token Postprocessor   │  Chain of Responsibility
+│    (token-postprocessor  │  Restructures flat tokens → nested tree
+│    .ts)                  │  (e.g., comments → containerBlock)
+│    • ContainerBlock      │
+└──────────┬───────────────┘
+           │
+           ▼
+┌──────────────────────────┐
+│ 4. Token Handlers        │  Strategy Pattern
+│    (handlers/)           │  Each marked token type has a dedicated
+│    • TokenHandlerRegistry│  handler, registered by type name.
+│    • CatchAllHandler     │  Extensible at runtime via registry.
+└──────────┬───────────────┘
+           │
+           ▼
+      ContentNode[]
+      (AST)
+           │
+           ▼
+┌──────────────────────────┐
+│ 5. Renderer              │  Strategy Pattern
+│    (renderer-strategies  │  Each ContentNode type has its own
+│    .ts / lit-strategies  │  render strategy — choose between:
+│    .ts)                  │  • HTMLRenderer (plain HTML strings)
+│    • NodeRendererStrategy│  • LitRenderer (Lit TemplateResult)
+│    • LitNodeRendererStrat│
+└──────────────────────────┘
+```
+
+### 1. Preprocessing (`preprocessor.ts`)
+
+The `CompositePreprocessor` chains `Preprocessor` transforms that run on raw markdown **before** lexing. Built-in:
+
+- **`ContainerBlockPreprocessor`** — converts `:::tag#id.class` fences to `<!-- md-container:... -->` HTML comment markers, so `marked` preserves them without affecting inner markdown parsing
+
+The chain is extensible:
+
+```typescript
+import { MarkdownParser, Preprocessor } from '@leadertechie/md2html';
+
+class EmojiPreprocessor implements Preprocessor {
+  readonly name = 'emoji';
+  process(markdown: string): string {
+    return markdown.replace(':smile:', '😊');
+  }
+}
+
+const parser = new MarkdownParser();
+parser.preprocessors.add(new EmojiPreprocessor());
+```
+
+### 2. Token Postprocessing (`token-postprocessor.ts`)
+
+The `CompositeTokenPostprocessor` chains `TokenPostprocessor` transforms that run on the flat token array **after** lexing. Built-in:
+
+- **`ContainerBlockPostprocessor`** — collapses `<!-- md-container:... -->` / `<!-- /md-container -->` markers into nested `containerBlock` tokens with proper parent-child structure (handles arbitrary nesting depth)
+
+Custom postprocessors:
+
+```typescript
+parser.postprocessors.add({
+  name: 'filter-unwanted',
+  process: (tokens) => tokens.filter(t => (t as any).type !== 'html')
+});
+```
+
+### 3. Token Handling — Strategy Pattern (`handlers/`)
+
+Each marked token type has its own `TokenHandler` class, registered in the `TokenHandlerRegistry`:
 
 ```
 src/handlers/
@@ -205,6 +290,10 @@ src/handlers/
 ├── hr-handler.ts         # <hr>
 ├── blockquote-handler.ts # <blockquote>
 ├── html-handler.ts       # raw HTML passthrough
+├── link-handler.ts       # <a>
+├── frontmatter-handler.ts# YAML frontmatter metadata
+├── container-block-      # ::: container blocks
+│   handler.ts
 └── catchall-handler.ts   # fallback for unregistered types
 ```
 
@@ -251,6 +340,67 @@ const parser = new MarkdownParser({
     console.warn(`[md2html] Unhandled token type: ${type}`);
   }
 });
+```
+
+### 4. Rendering — Strategy Pattern (`renderer-strategies.ts`, `lit-strategies.ts`)
+
+The AST renderers use the same Strategy + Registry pattern as the token handlers:
+
+- **`HTMLRenderer`** — produces plain HTML strings. Uses `NodeRendererStrategy` / `RendererStrategyRegistry` for each node type. Supports `classPrefix`, `addHeadingIds`, and `emitScopeAnchors` styling.
+- **`LitRenderer`** — produces Lit `TemplateResult` objects. Uses `LitNodeRendererStrategy` / `LitStrategyRegistry`. Perfect for Lit web components.
+
+Both registries are publicly accessible for customization:
+
+```typescript
+import { HTMLRenderer, NodeRendererStrategy } from '@leadertechie/md2html';
+
+const renderer = new HTMLRenderer({ classPrefix: 'my-' });
+
+// Register a custom strategy
+renderer.strategies.register({
+  type: 'custom',
+  render: (node, renderChild, ctx) => `<my-el>${node.content}</my-el>`
+});
+```
+
+The `LitRenderer.renderToHTMLString()` delegates to `HTMLRenderer` to avoid duplicating string rendering logic.
+
+### 5. Context Factory (`context-factory.ts`)
+
+The `createParseContext()` pure function separates context construction from the parser class. It bridges parser services (image processing, slot resolution, HTML sanitization) to token handlers via the `ParserServices` interface. This makes the context testable in isolation and decouples handler logic from parser internals.
+
+### Source Map
+
+```
+src/
+├── parser.ts              # Orchestrator: coordinates pre/post-processing + token handling
+├── preprocessor.ts        # Chain of Responsibility: markdown transforms before lexing
+├── token-postprocessor.ts # Chain of Responsibility: token transforms after lexing
+├── context-factory.ts     # Factory: creates ParseContext for token handlers
+├── handlers/              # Strategy: per-token-type ContentNode producers
+│   ├── types.ts
+│   ├── registry.ts
+│   ├── heading-handler.ts
+│   ├── paragraph-handler.ts
+│   ├── list-handler.ts
+│   ├── image-handler.ts
+│   ├── code-handler.ts
+│   ├── hr-handler.ts
+│   ├── blockquote-handler.ts
+│   ├── html-handler.ts
+│   ├── link-handler.ts
+│   ├── frontmatter-handler.ts
+│   ├── container-block-handler.ts
+│   └── catchall-handler.ts
+├── renderer.ts            # HTMLRenderer: transforms ContentNodes to plain HTML
+├── renderer-strategies.ts # Strategy: per-node-type HTML string renderers
+├── lit-renderer.ts        # LitRenderer: transforms ContentNodes to Lit TemplateResult
+├── lit-strategies.ts      # Strategy: per-node-type Lit TemplateResult renderers
+├── visitor.ts             # Visitor: tree traversal utilities
+├── factory.ts             # NodeFactory: ContentNode builder API
+├── pipeline.ts            # Facade: high-level MarkdownPipeline API
+├── types.ts               # Core types: ContentNode, MarkdownContent, configs
+└── telemetry-init.ts      # Shared logger initialization
 ```
 
 ## License

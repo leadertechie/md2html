@@ -1,18 +1,24 @@
 import { MarkdownParser } from './parser.js';
 import { HTMLRenderer } from './renderer.js';
 import { ContentNode, MarkdownContent, PipelineConfigV2 } from './types.js';
+import { getDefaultLogger } from './telemetry-init.js';
+import type { LoggerInterface } from '@leadertechie/telemetry';
 
-type NormalizedPipelineConfig = Required<Omit<PipelineConfigV2, 'onSlot' | 'slotPattern'>> & {
+type NormalizedPipelineConfig = Required<Omit<PipelineConfigV2, 'onSlot' | 'slotPattern' | 'logger'>> & {
   onSlot?: (name: string) => string;
   slotPattern: RegExp;
+  logger?: LoggerInterface;
 };
 
 export class MarkdownPipeline {
   private parser: MarkdownParser;
   private renderer: HTMLRenderer;
   private config: NormalizedPipelineConfig;
+  private log: LoggerInterface;
 
   constructor(config: PipelineConfigV2 = {}) {
+    this.log = config.logger ?? getDefaultLogger('md2html');
+
     this.config = {
       imagePathPrefix: config.imagePathPrefix || '',
       imageBaseUrl: config.imageBaseUrl || '',
@@ -35,7 +41,6 @@ export class MarkdownPipeline {
       allowedHTMLTags: config.allowedHTMLTags ?? [],
       allowedAttributes: config.allowedAttributes ?? {}
     };
-
 
     this.parser = new MarkdownParser({
       imagePathPrefix: this.config.imagePathPrefix,
@@ -65,8 +70,16 @@ export class MarkdownPipeline {
   }
 
   renderMarkdown(markdown: string): string {
-    const nodes = this.parse(markdown);
-    return this.render(nodes);
+    try {
+      const nodes = this.parse(markdown);
+      return this.render(nodes);
+    } catch (err: any) {
+      this.log.error('Markdown render failed', err, {
+        length: markdown.length,
+        recovery: this.config.errorRecovery,
+      });
+      throw err;
+    }
   }
 
   renderPage(title: string, nodes: ContentNode[], options?: {
