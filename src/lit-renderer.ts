@@ -1,56 +1,50 @@
+/**
+ * Lit Renderer
+ *
+ * Renders ContentNode trees to Lit TemplateResult objects using the
+ * LitNodeRendererStrategy pattern. This mirrors HTMLRenderer but
+ * outputs Lit-compatible template results for use in Lit elements.
+ *
+ * Uses the same Strategy + Registry pattern as renderer-strategies.ts,
+ * eliminating the previous switch-based duplication.
+ *
+ * To extend with custom node types, register your strategy with:
+ *   litRenderer.strategies.register(new MyLitStrategy());
+ */
+
 import { TemplateResult, html } from 'lit';
-import { unsafeHTML } from 'lit/directives/unsafe-html.js';
-import { ContentNode } from './types';
+import { ContentNode } from './types.js';
+import { LitStrategyRegistry } from './lit-strategies.js';
+import { HTMLRenderer } from './renderer.js';
+
+export { LitStrategyRegistry } from './lit-strategies.js';
+export type { LitNodeRendererStrategy } from './lit-strategies.js';
 
 export class LitRenderer {
-  private renderTextNode(node: ContentNode): TemplateResult {
-    if (node.type === 'image') {
-      return html`<img src="${node.src}" alt="${node.alt || ''}" class="inline-image" style="max-width:100%;height:auto;">`;
-    }
-    return html`${unsafeHTML(node.content || '')}`;
+  private strategyRegistry: LitStrategyRegistry;
+  /** Lazily created HTMLRenderer for string output, sharing the same config */
+  private htmlRenderer?: HTMLRenderer;
+
+  constructor() {
+    this.strategyRegistry = new LitStrategyRegistry();
   }
 
+  /** Access the strategy registry for customization. */
+  get strategies(): LitStrategyRegistry {
+    return this.strategyRegistry;
+  }
+
+  /**
+   * Render a single node to a Lit TemplateResult.
+   */
   renderNode(node: ContentNode): TemplateResult {
-    switch (node.type) {
-      case 'heading': {
-        const level = node.attributes?.level || '2';
-        if (level === '1') return html`<h1>${unsafeHTML(node.content)}</h1>`;
-        if (level === '2') return html`<h2>${unsafeHTML(node.content)}</h2>`;
-        if (level === '3') return html`<h3>${unsafeHTML(node.content)}</h3>`;
-        return html`<h2>${unsafeHTML(node.content)}</h2>`;
-      }
-        
-      case 'paragraph':
-        if (node.children) {
-          return html`<p>${node.children.map(child => this.renderTextNode(child))}</p>`;
-        }
-        return html`<p>${unsafeHTML(node.content)}</p>`;
-        
-      case 'list':
-        return html`<ul>${node.children?.map(child => this.renderNode(child))}</ul>`;
-        
-      case 'list-item':
-        return html`<li>${unsafeHTML(node.content)}</li>`;
-        
-      case 'image':
-        return html`<img src="${node.src || node.attributes?.src}" alt="${node.alt || node.attributes?.alt || ''}" class="${node.className || ''}" style="max-width:100%;height:auto;">`;
-        
-      case 'container':
-        return html`<div class="${node.className || ''}" style="${node.attributes?.style || ''}">
-          ${node.children?.map(child => this.renderNode(child))}
-        </div>`;
-      
-      case 'code':
-        return html`<pre><code class="language-${node.attributes?.lang || ''}">${node.content || ''}</code></pre>`;
-      
-      case 'text':
-        return html`${node.content}`;
-      
-      default:
-        return html``;
-    }
+    const strategy = this.strategyRegistry.get(node.type);
+    return strategy.render(node, (child) => this.renderNode(child));
   }
 
+  /**
+   * Render an array of nodes to a single Lit TemplateResult.
+   */
   renderNodes(nodes: ContentNode[]): TemplateResult {
     if (!nodes || nodes.length === 0) {
       return html``;
@@ -58,34 +52,22 @@ export class LitRenderer {
     return html`${nodes.map(node => this.renderNode(node))}`;
   }
 
+  /**
+   * Render nodes to a plain HTML string.
+   * Delegates to HTMLRenderer to avoid duplicating string rendering logic.
+   *
+   * Note: Uses default HTMLRenderer config (no classPrefix, scope anchors,
+   * or heading IDs). For full HTML rendering with those features,
+   * use HTMLRenderer directly.
+   */
   renderToHTMLString(nodes: ContentNode[]): string {
     if (!nodes || nodes.length === 0) {
       return '';
     }
-    return nodes.map(node => this.nodeToHTMLString(node)).join('\n');
-  }
-
-  private nodeToHTMLString(node: ContentNode): string {
-    switch (node.type) {
-      case 'heading':
-        const level = node.attributes?.level || '2';
-        return `<h${level}>${node.content}</h${level}>`;
-      case 'paragraph':
-        return `<p>${node.content}</p>`;
-      case 'list':
-        const items = node.children?.map(child => this.nodeToHTMLString(child)).join('') || '';
-        return `<ul>${items}</ul>`;
-      case 'list-item':
-        return `<li>${node.content}</li>`;
-      case 'image':
-        return `<img src="${node.attributes?.src}" alt="${node.attributes?.alt}" class="${node.className || ''}">`;
-      case 'container':
-        const childrenHTML = node.children?.map(child => this.nodeToHTMLString(child)).join('') || '';
-        return `<div class="${node.className || ''}">${childrenHTML}</div>`;
-      case 'text':
-        return node.content || '';
-      default:
-        return '';
+    if (!this.htmlRenderer) {
+      this.htmlRenderer = new HTMLRenderer();
     }
+    return this.htmlRenderer.renderNodes(nodes);
   }
 }
+
