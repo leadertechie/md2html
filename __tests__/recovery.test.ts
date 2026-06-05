@@ -100,7 +100,7 @@ describe('Raw HTML Preservation', () => {
       expect(html).toContain('World');
     });
 
-    it('should allow script tags when explicitly added to allowedHTMLTags', () => {
+    it('should strip script tags even when explicitly added to allowedHTMLTags (because DOMPurify sanitizes)', () => {
       const parser = new MarkdownParser({ 
         preserveRawHTML: true,
         allowedHTMLTags: ['script']
@@ -112,7 +112,8 @@ describe('Raw HTML Preservation', () => {
         }
         return n.content || '';
       }).join('');
-      expect(html).toContain('<script');
+      // DOMPurify should strip <script> regardless of parser configuration
+      expect(html).not.toContain('<script');
     });
 
     it('should not preserve raw HTML when preserveRawHTML is false (default)', () => {
