@@ -6,6 +6,11 @@ import { getDefaultLogger } from './telemetry-init.js';
 import { createParseContext, ParserServices } from './context-factory.js';
 import { CompositePreprocessor, createDefaultPreprocessor } from './preprocessor.js';
 import { CompositeTokenPostprocessor, createDefaultPostprocessor } from './token-postprocessor.js';
+import { JSDOM } from 'jsdom';
+import DOMPurify from 'dompurify';
+
+const window = new JSDOM('').window;
+const purify = DOMPurify(window);
 
 export interface ParserOptions {
   /** Optional telemetry logger */
@@ -195,20 +200,23 @@ export class MarkdownParser {
   }
 
   private processRawHTML(html: string): string {
-    if (!this.allowedHTMLTags.has('script')) {
-      html = html.replace(/<script[\s\S]*?<\/script>/gi, '');
-      html = html.replace(/<\/?script[^>]*>/gi, '');
-    }
-    if (!this.allowedHTMLTags.has('style')) {
-      html = html.replace(/<style[\s\S]*?<\/style>/gi, '');
-      html = html.replace(/<\/?style[^>]*>/gi, '');
+    const allowedTags = Array.from(this.allowedHTMLTags);
+
+    // Convert internal allowedAttributes format to DOMPurify format
+    // DOMPurify expects { tagName: [attrName, attrName] }
+    const allowedAttrMap: Record<string, string[]> = {};
+    for (const [tag, attrs] of Object.entries(this.allowedAttributes)) {
+      // Use the raw attribute names from configuration
+      allowedAttrMap[tag] = attrs;
     }
 
-    // Filter attributes on all remaining HTML tags
-    const hasAttrRules = Object.keys(this.allowedAttributes).length > 0;
-    if (hasAttrRules) {
-      html = html.replace(/<[^>]+>/g, (match) => this.filterTagAttributes(match));
-    }
+    // Sanitize using DOMPurify with dynamic allowedTags and allowedAttributes
+    html = purify.sanitize(html, {
+      ALLOWED_TAGS: allowedTags,
+      ALLOWED_ATTR: Object.values(allowedAttrMap).flat(), // Basic fallback for global attributes
+      ADD_ATTR: ['target', 'data-md-scope'], // Ensure system-critical attributes are allowed
+      RETURN_TRUSTED_TYPE: false,
+    });
 
     return html;
   }
