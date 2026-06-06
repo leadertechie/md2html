@@ -6,11 +6,7 @@ import { getDefaultLogger } from './telemetry-init.js';
 import { createParseContext, ParserServices } from './context-factory.js';
 import { CompositePreprocessor, createDefaultPreprocessor } from './preprocessor.js';
 import { CompositeTokenPostprocessor, createDefaultPostprocessor } from './token-postprocessor.js';
-import { JSDOM } from 'jsdom';
-import DOMPurify from 'dompurify';
-
-const window = new JSDOM('').window;
-const purify = DOMPurify(window);
+import sanitizeHtml from 'sanitize-html';
 
 export interface ParserOptions {
   /** Optional telemetry logger */
@@ -200,25 +196,37 @@ export class MarkdownParser {
   }
 
   private processRawHTML(html: string): string {
-    const allowedTags = Array.from(this.allowedHTMLTags);
+    // Tags that are inherently unsafe in raw HTML passthrough.
+    // sanitize-html follows the allowlist strictly, unlike DOMPurify which
+    // has built-in deny-listing. We manually exclude dangerous tags here.
+    const dangerousTags = new Set(['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button']);
+    const allowedTags = Array.from(this.allowedHTMLTags)
+      .filter(t => !dangerousTags.has(t.toLowerCase()));
 
-    // Convert internal allowedAttributes format to DOMPurify format
-    // DOMPurify expects { tagName: [attrName, attrName] }
-    const allowedAttrMap: Record<string, string[]> = {};
-    for (const [tag, attrs] of Object.entries(this.allowedAttributes)) {
-      // Use the raw attribute names from configuration
-      allowedAttrMap[tag] = attrs;
+    if (allowedTags.length === 0) {
+      return html.replace(/<[^>]*>/g, '');
     }
 
-    // Sanitize using DOMPurify with dynamic allowedTags and allowedAttributes
-    html = purify.sanitize(html, {
-      ALLOWED_TAGS: allowedTags,
-      ALLOWED_ATTR: Object.values(allowedAttrMap).flat(), // Basic fallback for global attributes
-      ADD_ATTR: ['target', 'data-md-scope'], // Ensure system-critical attributes are allowed
-      RETURN_TRUSTED_TYPE: false,
-    });
+    // Build allowedAttributes map for sanitize-html.
+    const globalAttrs = this.allowedAttributes['*'] || [];
+    const allowedAttrs: Record<string, string[]> = {};
+    for (const [tag, attrs] of Object.entries(this.allowedAttributes)) {
+      if (tag === '*') continue;
+      const lowerTag = tag.toLowerCase();
+      if (dangerousTags.has(lowerTag)) continue;
+      allowedAttrs[lowerTag] = [...globalAttrs, ...attrs];
+    }
 
-    return html;
+    // sanitize-html is pure JS, works in Node.js, CF Workers, and browsers —
+    // no jsdom or nodejs_compat needed.
+    return sanitizeHtml(html, {
+      allowedTags,
+      allowedAttributes: allowedAttrs,
+      allowedSchemes: ['http', 'https', 'mailto'],
+      allowProtocolRelative: false,
+      // system-critical attributes always pass through
+      exclusiveFilter: undefined,
+    }) as string;
   }
 
 
