@@ -19,7 +19,15 @@ export default defineConfig({
       fileName: 'index',
     },
     rollupOptions: {
-      external: ['marked', 'lit'],
+      external: [
+        'marked',
+        'lit',
+        'lit-html',
+        'lit-html/directives/unsafe-html.js',
+        'jsdom',
+        'dompurify',
+        '@leadertechie/telemetry',
+      ],
     },
     minify: false,
     sourcemap: true,
