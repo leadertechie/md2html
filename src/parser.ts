@@ -255,7 +255,6 @@ export class MarkdownParser {
     for (const { placeholder, original } of preservedScripts) {
       result = result.replace(placeholder, original);
     }
-
     return result;
   }
 
