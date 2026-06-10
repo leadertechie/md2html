@@ -83,8 +83,13 @@ export interface PipelineConfigV2 extends PipelineConfig {
    * Key "*" applies to all tags. Key "tag" applies to specific tags.
    * Supports "data-*" wildcard prefix matching.
    * Example: { "*": ["id", "class"], "script": ["type", "src"] }
+  /**
+   * Allowed HTML attributes per tag for preserveRawHTML mode.
+   * Key "*" applies to all tags. Key "tag" applies to specific tags.
    */
   allowedAttributes?: Record<string, string[]>;
+  /** Script types to allow in preserveRawHTML mode (e.g., ["importmap", "module"]). Empty = strip all scripts. */
+  allowedScriptTypes?: string[];
 }
 
 
