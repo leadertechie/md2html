@@ -40,6 +40,7 @@ export class MarkdownPipeline {
       maxRecursionDepth: config.maxRecursionDepth ?? 100,
       allowedHTMLTags: config.allowedHTMLTags ?? [],
       allowedScriptTypes: (config as any).allowedScriptTypes ?? [],
+      wrapHtmlDocument: (config as any).wrapHtmlDocument ?? false,
       allowedAttributes: config.allowedAttributes ?? {}
     };
 
@@ -52,7 +53,7 @@ export class MarkdownPipeline {
       errorRecovery: this.config.errorRecovery,
       maxRecursionDepth: this.config.maxRecursionDepth,
       allowedHTMLTags: this.config.allowedHTMLTags,
-        allowedScriptTypes: (this.config as any).allowedScriptTypes ?? [],
+      allowedScriptTypes: (this.config as any).allowedScriptTypes ?? [],
       allowedAttributes: this.config.allowedAttributes
     });
 
@@ -73,6 +74,22 @@ export class MarkdownPipeline {
 
   renderMarkdown(markdown: string): string {
     try {
+      if (this.config.wrapHtmlDocument) {
+        const isHtmlDoc = markdown.trimStart().startsWith('<!DOCTYPE') || markdown.includes('<html');
+        if (isHtmlDoc) {
+          const head = markdown.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
+          const body = markdown.match(/(<body[^>]*>)([\s\S]*)(<\/body>)/i);
+          if (body) {
+            const nodes = this.parse(body[2]);
+            let rendered = this.render(nodes);
+            const m = rendered.match(/^<div\s+data-md-scope="root">([\s\S]*)<\/div>\s*$/);
+            if (m) rendered = m[1];
+            return '<!DOCTYPE html>\n<html>\n<head>\n' +
+              (head ? head[1] : '') + '\n</head>\n' + body[1] + '\n' +
+              rendered + '\n' + body[3] + '\n</html>';
+          }
+        }
+      }
       const nodes = this.parse(markdown);
       return this.render(nodes);
     } catch (err: any) {
