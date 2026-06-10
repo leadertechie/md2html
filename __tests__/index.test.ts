@@ -152,4 +152,43 @@ describe('MarkdownPipeline', () => {
       expect(nodes[0].children?.[0].src).toBe('images/test.jpg');
     });
   });
+
+  describe('wrapHtmlDocument', () => {
+    it('should not affect plain Markdown when enabled', () => {
+      const p = new MarkdownPipeline({ wrapHtmlDocument: true });
+      const html = p.renderMarkdown('# Hello');
+      expect(html).toContain('<h1>Hello</h1>');
+      expect(html).not.toContain('<!DOCTYPE');
+    });
+
+    it('should extract body and render HTML document when enabled', () => {
+      const p = new MarkdownPipeline({ preserveRawHTML: true, wrapHtmlDocument: true, allowedHTMLTags: ['h1'] });
+      const html = p.renderMarkdown(
+        '<!DOCTYPE html>\n<html>\n<head><title>T</title></head>\n<body>\n<h1>Hello</h1>\n</body>\n</html>'
+      );
+      expect(html).toContain('<!DOCTYPE html>');
+      expect(html).toContain('<title>T</title>');
+      expect(html).toContain('<h1>Hello</h1>');
+      expect((html.match(/<body/g) || []).length).toBe(1);
+      expect((html.match(/<\/body>/g) || []).length).toBe(1);
+    });
+
+    it('should render Markdown inside body when enabled', () => {
+      const p = new MarkdownPipeline({ preserveRawHTML: true, wrapHtmlDocument: true });
+      const html = p.renderMarkdown(
+        '<!DOCTYPE html>\n<html>\n<head></head>\n<body>\n# Heading\n\nPara\n</body>\n</html>'
+      );
+      expect(html).toContain('<h1>Heading</h1>');
+      expect(html).toContain('<p>Para</p>');
+      expect(html).toContain('<!DOCTYPE html>');
+    });
+
+    it('should not affect HTML doc when disabled (default)', () => {
+      const p = new MarkdownPipeline({ preserveRawHTML: true, allowedHTMLTags: ['h1'] });
+      const html = p.renderMarkdown(
+        '<!DOCTYPE html>\n<html>\n<head></head>\n<body>\n<h1>Hello</h1>\n</body>\n</html>'
+      );
+      expect(html).toContain('<h1>Hello</h1>');
+    });
+  });
 });

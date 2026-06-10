@@ -90,6 +90,8 @@ export interface PipelineConfigV2 extends PipelineConfig {
   allowedAttributes?: Record<string, string[]>;
   /** Script types to allow in preserveRawHTML mode (e.g., ["importmap", "module"]). Empty = strip all scripts. */
   allowedScriptTypes?: string[];
+  /** When true, detect HTML documents (<!DOCTYPE or <html>) and render only body content through md2html, re-wrapping with original structure. Prevents sanitize-html from closing structural tags prematurely. */
+  wrapHtmlDocument?: boolean;
 }
 
 
