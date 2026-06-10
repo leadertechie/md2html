@@ -226,6 +226,10 @@ export class MarkdownParser {
     // Build allowedAttributes map for sanitize-html.
     const globalAttrs = this.allowedAttributes['*'] || [];
     const allowedAttrs: Record<string, string[]> = {};
+    // Pass global wildcard directly to sanitize-html (it supports '*' natively)
+    if (globalAttrs.length > 0) {
+      allowedAttrs['*'] = globalAttrs;
+    }
     for (const [tag, attrs] of Object.entries(this.allowedAttributes)) {
       if (tag === '*') continue;
       const lowerTag = tag.toLowerCase();
