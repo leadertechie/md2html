@@ -25,6 +25,7 @@ export interface ParserOptions {
    * Supports "data-*" wildcard prefix matching.
    */
   allowedAttributes?: Record<string, string[]>;
+  allowedScriptTypes?: string[];
   /**
    * Callback invoked when a token type has no dedicated handler.
 
@@ -55,6 +56,7 @@ export class MarkdownParser {
   private maxRecursionDepth: number;
   private allowedHTMLTags: Set<string>;
   private allowedAttributes: Record<string, string[]>;
+  private allowedScriptTypes: Set<string>;
   private handlerRegistry: TokenHandlerRegistry;
   private onUnhandledToken?: (type: string, token: Record<string, unknown>) => void;
   private log: LoggerInterface;
@@ -75,6 +77,7 @@ export class MarkdownParser {
       ...(options?.allowedHTMLTags ?? [])
     ]);
     this.allowedAttributes = options?.allowedAttributes ?? {};
+    this.allowedScriptTypes = new Set(options?.allowedScriptTypes ?? []);
     this.handlerRegistry = new TokenHandlerRegistry();
     this.onUnhandledToken = options?.onUnhandledToken;
     this.preprocessor = createDefaultPreprocessor();
@@ -196,10 +199,23 @@ export class MarkdownParser {
   }
 
   private processRawHTML(html: string): string {
+    // Preserve scripts with allowed types before sanitization.
+    const preservedScripts: Array<{ placeholder: string; original: string }> = [];
+    if (this.allowedScriptTypes.size > 0) {
+      const allowedTypes = Array.from(this.allowedScriptTypes).join('|');
+      const scriptRegex = new RegExp(
+        `<script\\s+type="(${allowedTypes})"\\s*[^>]*>[\\s\\S]*?</script>`,
+        'gi'
+      );
+      html = html.replace(scriptRegex, (match: string) => {
+        const placeholder = `__SCRIPT_${preservedScripts.length}__`;
+        preservedScripts.push({ placeholder, original: match });
+        return placeholder;
+      });
+    }
+
     // Tags that are inherently unsafe in raw HTML passthrough.
-    // sanitize-html follows the allowlist strictly, unlike DOMPurify which
-    // has built-in deny-listing. We manually exclude dangerous tags here.
-    const dangerousTags = new Set(['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button']);
+    const dangerousTags = new Set(["script", "style", "iframe", "object", "embed", "form", "input", "button"]);
     const allowedTags = Array.from(this.allowedHTMLTags)
       .filter(t => !dangerousTags.has(t.toLowerCase()));
 
@@ -219,7 +235,10 @@ export class MarkdownParser {
 
     // sanitize-html is pure JS, works in Node.js, CF Workers, and browsers —
     // no jsdom or nodejs_compat needed.
-    return sanitizeHtml(html, {
+
+    // Restore preserved scripts after sanitization
+    let result = sanitizeHtml(html, {
+
       allowedTags,
       allowedAttributes: allowedAttrs,
       allowedSchemes: ['http', 'https', 'mailto'],
@@ -227,6 +246,12 @@ export class MarkdownParser {
       // system-critical attributes always pass through
       exclusiveFilter: undefined,
     }) as string;
+
+    // Restore preserved scripts
+    for (const { placeholder, original } of preservedScripts) {
+      result = result.replace(placeholder, original);
+    }
+    return result;
   }
 
 

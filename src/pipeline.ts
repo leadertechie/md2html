@@ -39,6 +39,7 @@ export class MarkdownPipeline {
       errorRecovery: config.errorRecovery ?? 'throw',
       maxRecursionDepth: config.maxRecursionDepth ?? 100,
       allowedHTMLTags: config.allowedHTMLTags ?? [],
+      allowedScriptTypes: (config as any).allowedScriptTypes ?? [],
       allowedAttributes: config.allowedAttributes ?? {}
     };
 
@@ -51,6 +52,7 @@ export class MarkdownPipeline {
       errorRecovery: this.config.errorRecovery,
       maxRecursionDepth: this.config.maxRecursionDepth,
       allowedHTMLTags: this.config.allowedHTMLTags,
+        allowedScriptTypes: (this.config as any).allowedScriptTypes ?? [],
       allowedAttributes: this.config.allowedAttributes
     });
 
